@@ -1,17 +1,13 @@
+const express = require('express');
 const axios = require('axios');
 const cheerio = require('cheerio');
+var cors = require('cors')
 const sqlite3 = require('sqlite3').verbose();
 
-// Função para obter o conteúdo HTML de uma URL
-async function fetchHTML(url) {
-  try {
-    const response = await axios.get(url);
-    return response.data;
-  } catch (error) {
-    console.error(`Erro ao buscar a URL ${url}: ${error.message}`);
-    return null;
-  }
-}
+
+const app = express();
+const port = 8000;
+app.use(cors());
 
 // Função para contar as ocorrências das tags HTML
 function countTags(html) {
@@ -41,25 +37,41 @@ function insertData(url, tags) {
   db.close();
 }
 
-// URLs para testar o processamento
-const urls = [
-  'https://react.dev/community',
-  'https://www.conventionalcommits.org/en/v1.0.0/',
-];
-
-// Processamento das URLs
-async function processURLs() {
-  for (const url of urls) {
-    const html = await fetchHTML(url);
-
-    if (html) {
-      const tags = countTags(html);
-      insertData(url, tags);
-      console.log(`URL ${url} processada com sucesso!`);
-    } else {
-      console.log(`Não foi possível obter o conteúdo da URL ${url}`);
-    }
-  }
+async function getTagsData(url) {
+  return new Promise(async (resolve, reject) => {
+    const db = new sqlite3.Database('database.db');
+    db.get('SELECT * FROM pages WHERE url = ?', [url], async (err, row) => {
+      if (row) {
+        console.log('Data found in the cache');
+      } else {
+        resolve({})
+      }
+    });
+    db.close();
+  });
 }
 
-processURLs();
+
+// Rota para realizar as solicitações HTTP
+app.get('/fetch-url', async (req, res) => {
+  const { url } = req.query;
+  if(!url){
+    return res.json({error:'Sem Url'})
+    // Todo: verificar se existe
+  }
+
+  const data = await getTagsData(url);
+  try {
+    const response = await axios.get(url);
+    const tags = await countTags(response.data)
+    insertData(url, tags)
+    res.json(tags);
+  } catch (error) {
+    console.error('Error fetching URL:', error);
+    res.status(500).send('Error fetching URL');
+  }
+});
+
+app.listen(port, () => {
+  console.log(`Server is running on http://localhost:${port}`);
+});
