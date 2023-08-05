@@ -6,7 +6,7 @@ class TagCounter {
     const tags = {};
 
     $('*').each((index, element) => {
-      const tagName = element.name;
+      const tagName = element.name.trim();
       tags[tagName] = (tags[tagName] || 0) + 1;
     });
 

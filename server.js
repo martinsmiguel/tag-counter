@@ -32,6 +32,15 @@ function isValidURL(url) {
   return urlPattern.test(url);
 }
 
+function normalizeURLs(urls) {
+  return urls.map((url) => {
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      return 'http://' + url;
+    }
+    return url;
+  });
+}
+
 process.on('SIGINT', () => {
   dbService.close();
   console.log('Conexão do banco de dados fechada.');
@@ -39,25 +48,35 @@ process.on('SIGINT', () => {
 });
 
 // Rota para realizar as solicitações HTTP
-app.get('/fetch-url', async (req, res) => {
-  let { url } = req.query;
-  console.log(url);
-  if (!url) {
-    return res.status(400).json({ error: 'URL ausente na requisição' });
+app.get('/fetch-urls', async (req, res) => {
+  let { urls } = req.query;
+
+  if (!urls) {
+    return res.status(400).json({ error: 'Lista de URLs ausente na requisição' });
   }
-  // Verificar se a URL possui um protocolo válido (http ou https)
-  if (!url.startsWith('http://') && !url.startsWith('https://')) {
-    // Adicionar 'http://' como protocolo padrão, já que é o mais comum
-    url = 'http://' + url;
+
+  // Remover espaços em branco antes de dividir as URLs
+  // Transformar a lista de URLs em um array e normalizá-las
+  const urlList = urls.replace(/\s/g, '').split(',');
+  const normalizedUrls = normalizeURLs(urlList);
+
+  // Filtrar e remover URLs inválidas
+  const validUrls = normalizedUrls.filter((url) => isValidURL(url));
+
+  if (validUrls.length === 0) {
+    return res.status(400).json({ error: 'Nenhuma URL válida foi fornecida' });
   }
-  if (!isValidURL(url)) {
-    return res.status(400).json({ error: 'URL inválida' });
-  }
+
   try {
-    const response = await axios.get(url);
-    const tags = tagCounter.countTags(response.data);
-    await dbService.insertData(url, tags);
-    res.json(tags);
+    const results = [];
+    for (const url of validUrls) {
+      const response = await axios.get(url);
+      const tags = tagCounter.countTags(response.data);
+      await dbService.insertData(url, tags);
+      results.push({ url, tags });
+    }
+
+    res.json(results);
   } catch (error) {
     console.error('Erro ao buscar URL:', error);
     res.status(500).send('Erro ao buscar URL');
